@@ -18,6 +18,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Message
 import android.text.TextUtils
+import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
@@ -26,6 +27,7 @@ import androidx.core.app.ActivityCompat
 import androidx.lifecycle.MutableLiveData
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.arron.mydemo.*
+import com.arron.mydemo.App.Companion.mDevice
 import com.arron.mydemo.bluetooth.adapter.MyAdapter
 import com.arron.mydemo.bluetooth.model.BluetoothDeviceBean
 import com.arron.mydemo.bluetooth.model.CharacteristicBean
@@ -45,11 +47,12 @@ const val MODE_BLE = 2
 
 const val ACTION_GATT_CONNECTED = "com.example.bluetooth.le.ACTION_GATT_CONNECTED"
 const val ACTION_GATT_DISCONNECTED = "com.example.bluetooth.le.ACTION_GATT_DISCONNECTED"
-const val ACTION_GATT_SERVICES_DISCOVERED = "com.example.bluetooth.le.ACTION_GATT_SERVICES_DISCOVERED"
+const val ACTION_GATT_SERVICES_DISCOVERED =
+    "com.example.bluetooth.le.ACTION_GATT_SERVICES_DISCOVERED"
 const val ACTION_DATA_AVAILABLE = "com.example.bluetooth.le.ACTION_DATA_AVAILABLE"
 const val EXTRA_DATA = "com.example.bluetooth.le.EXTRA_DATA"
 val UUID_HEART_RATE_MEASUREMENT = UUID.fromString("00002A37-0000-1000-8000-00805F9B34FB")
-val bluetoothGattServiceLiveData= MutableLiveData<BluetoothGattService>()
+val bluetoothGattServiceLiveData = MutableLiveData<BluetoothGattService>()
 
 val MY_UUID = UUID.fromString("00001000-0000-1000-8000-00805F9B34FB")
 
@@ -75,7 +78,7 @@ class BluetoothActivity : AppCompatActivity() {
     private var connectionState = STATE_DISCONNECTED
     private var currMode = MODE_CLASSIC
     private var bluetoothGatt: BluetoothGatt? = null
-    private var bluetoothGattService:BluetoothGattService? = null
+    private var bluetoothGattService: BluetoothGattService? = null
 
     private var handler = object : Handler() {
         override fun handleMessage(msg: Message) {
@@ -143,10 +146,10 @@ class BluetoothActivity : AppCompatActivity() {
         tv_send.setOnClickListener {
             val content = et_content.text.toString()
             if (!TextUtils.isEmpty(content)) {
-                if(currMode== MODE_CLASSIC)
-                    connectedThread?.write(content.toByteArray())
-                else
-                    writeBleData(bluetoothGattService,content)
+//                if(currMode== MODE_CLASSIC)
+                connectedThread?.write(content.toByteArray())
+//                else
+//                    writeBleData(bluetoothGattService,content)
             }
         }
         tv_enable_discover.setOnClickListener {
@@ -157,9 +160,24 @@ class BluetoothActivity : AppCompatActivity() {
                 scanLeDevice(true)
         }
         tv_create_server.setOnClickListener {
-            if(checkBluetooth()){
+            if (checkBluetooth()) {
                 acceptThread?.cancel()
                 acceptThread = AcceptThread().apply { start() }
+            }
+        }
+        tv_setPinOpen.setOnClickListener {
+            if (App.setPinOpen) {
+                tv_setPinOpen.text = "设置pin码为123456——关"
+            } else {
+                tv_setPinOpen.text = "设置pin码为123456——开"
+            }
+            App.setPinOpen = !App.setPinOpen
+        }
+
+        tv_removePair.setOnClickListener {
+            Log.e("XYZ", mDevice!!.name + " 开始解除配对")
+            if (mDevice != null) {
+            removeBond()
             }
         }
     }
@@ -168,19 +186,23 @@ class BluetoothActivity : AppCompatActivity() {
         recycler.layoutManager = LinearLayoutManager(this)
         mAdapter = MyAdapter(ArrayList()) {
             it.device ?: return@MyAdapter
-            if (currMode == MODE_CLASSIC) {
-                connectThread?.cancel()
-                if (!it.isPaired)
-                    createBond(it.device!!)
-                else
-                    connectThread = ConnectThread(it.device!!).apply { start() }
-            } else {
-                if (it.services == null) {
-                    gattCallback.deviceBean = it
-                    scanLeDevice(false)
-                    it.device!!.connectGatt(this, false, gattCallback)
-                }
-            }
+//            if (currMode == MODE_CLASSIC) {
+            connectThread?.cancel()
+            mDevice = it.device!!
+            Log.e("XYZ", "连接上了?" + mDevice!!.name)
+            if (!it.isPaired) {
+                Log.e("XYZ", "连接上了?" + mDevice!!.name)
+               mDevice = it.device!!
+                createBond(it.device!!)
+            } else
+                connectThread = ConnectThread(it.device!!).apply { start() }
+//            } else {
+//                if (it.services == null) {
+//                    gattCallback.deviceBean = it
+//                    scanLeDevice(false)
+//                    it.device!!.connectGatt(this, false, gattCallback)
+//                }
+//            }
         }
         recycler.adapter = mAdapter
     }
@@ -380,7 +402,7 @@ class BluetoothActivity : AppCompatActivity() {
                 val creMethod = BluetoothDevice::class.java.getMethod("createBond");
                 log(TAG, "开始配对");
                 creMethod.invoke(mBluetoothDevice);
-                startDiscovery()
+//                startDiscovery()
             }
         } catch (e: Exception) {
             e.printStackTrace();
@@ -388,11 +410,25 @@ class BluetoothActivity : AppCompatActivity() {
         }
     }
 
+    private fun removeBond() {
+        try {
+//            if (mDevice!!.bondState == BluetoothDevice.BOND_BONDED) {
+            val creMethod = BluetoothDevice::class.java.getMethod("removeBond");
+            creMethod.invoke(mDevice);
+            Log.e("XYZ", "已执行removeBond")
+//            }
+        } catch (e: Exception) {
+            Log.e("XYZ", "removeBond——Exception:\n" + e)
+            throw  Exception("Can't removeBond with this device,please try again");
+        }
+    }
+
     private inner class AcceptThread : Thread() {
 
         val NAME = "MyDemo"
         private val mmServerSocket: BluetoothServerSocket? by lazy(LazyThreadSafetyMode.NONE) {
-            mBluetoothAdapter?.listenUsingInsecureRfcommWithServiceRecord(NAME,
+            mBluetoothAdapter?.listenUsingInsecureRfcommWithServiceRecord(
+                NAME,
                 MY_UUID
             )
         }
@@ -447,7 +483,7 @@ class BluetoothActivity : AppCompatActivity() {
                     // the connection in a separate thread.
                     manageMyConnectedSocket(socket)
                 } catch (e: Exception) {
-                    log(TAG, "连接失败！")
+//                    log(TAG, "连接失败！")
                 }
             }
         }
@@ -632,7 +668,7 @@ class BluetoothActivity : AppCompatActivity() {
                 BluetoothGatt.GATT_SUCCESS -> {
                     val gattService = gatt.getService(UUID.fromString(SERVICE_UUID));// 获取到服务的通道
 //                    获取到Notify的Characteristic通道 这个根据协议来定  如果设备厂家给的协议不是Notify的话  就不用做以下操作了
-                    if(gattService!=null) {
+                    if (gattService != null) {
                         val notifyCharacteristic: BluetoothGattCharacteristic =
                             gattService.getCharacteristic(UUID.fromString(NOTIFY_UUID))
                         enableNotification(gatt, true, notifyCharacteristic) //注册Notify通知
@@ -673,7 +709,7 @@ class BluetoothActivity : AppCompatActivity() {
             status: Int
         ) {
             super.onCharacteristicWrite(gatt, characteristic, status)
-            if(status==BluetoothGatt.GATT_SUCCESS) {
+            if (status == BluetoothGatt.GATT_SUCCESS) {
                 //写入成功 可以读取数据了
 //            val readCharact: BluetoothGattCharacteristic = gattService.getCharacteristic(UUID.fromString(READUUID))
 //            gatt.readCharacteristic(readCharact);
@@ -683,11 +719,13 @@ class BluetoothActivity : AppCompatActivity() {
     }
 
     //向BLE设备写入数据
-    private fun writeBleData(bluetoothGattService: BluetoothGattService?,data: String?): Boolean {
-        bluetoothGattService?:return false
-        val writeCharact: BluetoothGattCharacteristic = bluetoothGattService.getCharacteristic(UUID.fromString(
-            WRITE_UUID
-        ))
+    private fun writeBleData(bluetoothGattService: BluetoothGattService?, data: String?): Boolean {
+        bluetoothGattService ?: return false
+        val writeCharact: BluetoothGattCharacteristic = bluetoothGattService.getCharacteristic(
+            UUID.fromString(
+                WRITE_UUID
+            )
+        )
         bluetoothGatt!!.setCharacteristicNotification(writeCharact, true) // 设置监听
         // 当数据传递到蓝牙之后
         // 会回调BluetoothGattCallback里面的write方法
@@ -779,7 +817,7 @@ class BluetoothActivity : AppCompatActivity() {
                 val characteristicBean = CharacteristicBean(uuid)
                 gattCharacteristicData.add(characteristicBean)
             }
-            val serviceBean = ServiceBean(uuid, gattCharacteristicData,gattService)
+            val serviceBean = ServiceBean(uuid, gattCharacteristicData, gattService)
             gattServiceData.add(serviceBean)
         }
         deviceBean.services = gattServiceData
@@ -810,7 +848,8 @@ class BluetoothActivity : AppCompatActivity() {
             return false
         }
         //获取到Notify当中的Descriptor通道  然后再进行注册
-        val clientConfig = characteristic.getDescriptor(UUID.fromString(NOTIFY_DESCRIPTOR)) ?: return false
+        val clientConfig =
+            characteristic.getDescriptor(UUID.fromString(NOTIFY_DESCRIPTOR)) ?: return false
         if (enable) {
             clientConfig.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
         } else {
